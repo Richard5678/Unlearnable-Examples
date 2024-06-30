@@ -16,7 +16,7 @@ python3 perturbation.py --config_path             $config_path       \
                         --exp_name                $exp_path          \
                         --version                 $base_version      \
                         --train_data_type         $dataset_type      \
-                        --noise_shape             50000 3 32 32      \
+                        --noise_shape             10000 3 32 32      \
                         --epsilon                 $epsilon           \
                         --num_steps               $num_steps         \
                         --step_size               $step_size         \
