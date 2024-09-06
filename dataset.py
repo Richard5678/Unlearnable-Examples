@@ -8,7 +8,7 @@ import random
 import mlconfig
 import pandas
 from util import onehot, rand_bbox
-from torch.utils.data.dataset import Dataset
+from torch.utils.data.dataset import Dataset, Subset
 from functools import partial
 from PIL import Image, ImageFilter
 from sklearn.model_selection import train_test_split
@@ -103,6 +103,7 @@ transform_options["CelebAMini"] = transform_options["CelebA"]
 class DatasetGenerator:
     def __init__(
         self,
+        selected_classes=list(range(10)),
         train_batch_size=128,
         eval_batch_size=256,
         num_of_workers=4,
@@ -153,14 +154,25 @@ class DatasetGenerator:
         def filter_classes(dataset, classes):
             return [x for x in dataset if x[1] in classes]
 
+        def filter_selected_classes(dataset, classes):
+            idx = [i for i, x in enumerate(dataset) if x[1] in classes]
+            return Subset(dataset, idx)
+
+        print("dataset selected classes: ", selected_classes)
         # Training Datasets
         if train_data_type == "CIFAR10":
-            # num_of_classes = 10
-            # train_dataset = datasets.CIFAR10(root=train_data_path, train=True,
-            #                                  download=True, transform=train_transform)
+            num_of_classes = len(selected_classes)
+            train_dataset = datasets.CIFAR10(
+                root=train_data_path,
+                train=True,
+                download=True,
+                transform=train_transform,
+            )
 
-            num_classes = 2
-            train_dataset = DogNonDogDataset()
+            # num_classes = 2
+            train_dataset = filter_selected_classes(train_dataset, selected_classes)
+            # train_dataset = DogNonDogDataset()
+            # train_dataset = DogNonDogInjectionDataset()
 
         elif train_data_type == "PoisonCIFAR10":
             num_of_classes = 10
@@ -306,9 +318,15 @@ class DatasetGenerator:
 
         # Test Datset
         if test_data_type == "CIFAR10":
-            # test_dataset = datasets.CIFAR10(root=test_data_path, train=False,
-            # download=True, transform=test_transform)
-            test_dataset = DogNonDogDataset(train=False)
+            test_dataset = datasets.CIFAR10(
+                root=test_data_path,
+                train=False,
+                download=True,
+                transform=test_transform,
+            )
+            test_dataset = filter_selected_classes(test_dataset, selected_classes)
+            # test_dataset = DogNonDogDataset(train=False)
+            # test_dataset = DogNonDogInjectionDataset(train=False)
 
         elif test_data_type == "PoisonCIFAR10":
             test_dataset = PoisonCIFAR10(
@@ -1032,7 +1050,7 @@ class CatDogDataset(datasets.VisionDataset):
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, CIFAR100
 import numpy as np
 from torchvision.transforms import ToPILImage
 
@@ -1065,25 +1083,6 @@ class DogNonDogDataset(Dataset):
         dog_data = []
         non_dog_data = [[] for _ in range(len(classes) - 1)]
 
-        def generate_evenly_distributed_sum(total_sum, num_elements):
-            # Start with an even distribution
-            base_value = total_sum // num_elements
-            result = [base_value] * num_elements
-
-            # Distribute the remainder
-            remainder = total_sum - sum(result)
-            for i in range(remainder):
-                result[i % num_elements] += 1
-
-            # Shuffle the list to avoid any pattern
-            random.shuffle(result)
-
-            return result
-
-        samples_per_class = generate_evenly_distributed_sum(
-            len(cifar10) // len(classes), len(classes)
-        )
-
         for image, label in cifar10:
             if label == dog_class_index:
                 dog_data.append((image, 1))  # 1 for dog
@@ -1112,6 +1111,7 @@ class DogNonDogDataset(Dataset):
         samples_per_class = generate_evenly_distributed_sum(
             len(dog_data), len(classes) - 1
         )
+        print(f"samples per class {samples_per_class}")
 
         indices_list = []
         # Sample equal number of non-dog images from each class
@@ -1124,7 +1124,6 @@ class DogNonDogDataset(Dataset):
             indices_list.append(indices)
 
         from datetime import datetime
-        import json
 
         time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"indices_list_{time_str}.npy"
@@ -1133,6 +1132,92 @@ class DogNonDogDataset(Dataset):
 
         # Combine dog and non-dog datasets
         self.data = dog_data + sampled_non_dog_data
+        # np.random.shuffle(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+    # def __getitem__(self, idx):
+    #     image, label = self.data[idx]
+    #     if self.transform:
+    #         image = self.transform(image)
+    #     return image, label
+    def __getitem__(self, idx):
+        image, label = self.data[idx]
+        if isinstance(image, torch.Tensor):
+            image = ToPILImage()(image)
+        if self.transform:
+            image = self.transform(image)
+        return image, label
+
+
+class DogNonDogInjectionDataset(Dataset):
+    def __init__(self, train=True, transform=None):
+        self.transform = transform or transforms.ToTensor()
+
+        # Load CIFAR10 dataset
+        cifar10 = CIFAR10(
+            root="./data", train=train, download=True, transform=self.transform
+        )
+        cifar100 = CIFAR100(
+            root="./data", train=train, download=True, transform=self.transform
+        )
+
+        cifar100_data, cifar100_labels = zip(*cifar100)
+
+        # Number of classes in CIFAR-100
+        num_classes = 100
+
+        # Number of samples per class
+        samples_per_class = 50
+
+        # Initialize lists to store sampled data and labels
+        sampled_data = []
+        # sampled_labels = []
+
+        np.random.seed(0)
+
+        # Sample from each class
+        for class_id in range(num_classes):
+            # Find indices of samples belonging to the current class
+            class_indices = [
+                i for i, label in enumerate(cifar100_labels) if label == class_id
+            ]
+
+            # Randomly sample 50 indices (or all if less than 50)
+            sampled_indices = np.random.choice(
+                class_indices,
+                size=min(samples_per_class, len(class_indices)),
+                replace=False,
+            )
+
+            # Add sampled data and labels to the lists
+            sampled_data.extend([(cifar100_data[i], 0) for i in sampled_indices])
+            # sampled_labels.append(cifar100_labels[sampled_indices])
+
+        # Concatenate the sampled data and labels
+        # sampled_data = np.concatenate(sampled_data)
+        # sampled_labels = np.concatenate(sampled_labels)
+
+        cifar10_data, cifar10_labels = zip(*cifar10)
+
+        print()
+        dog_indices = [i for i, label in enumerate(cifar10_labels) if label == 5]
+        print(f"dog indices: {len(dog_indices)}")
+        dog_data = [(cifar10_data[i], 1) for i in dog_indices]
+        # non_dog_indices = np.where(cifar10_labels != 5)[0]
+        # non_dog_data = [(cifar10_data[i], 0) for i in non_dog_indices]
+
+        # from datetime import datetime
+
+        # time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # filename = f"indices_list_{time_str}.npy"
+        # if not os.path.exists(filename):
+        #     np.save(filename, indices_list)
+
+        # Combine dog and non-dog datasets
+        print(f"data length: {len(dog_data)} {len(sampled_data)}")
+        self.data = dog_data + sampled_data
         # np.random.shuffle(self.data)
 
     def __len__(self):

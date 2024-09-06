@@ -56,6 +56,7 @@ logger = util.setup_logger(name=args.version, log_file=log_file_path + ".log")
 # CUDA Options
 logger.info("PyTorch Version: %s" % (torch.__version__))
 if torch.cuda.is_available():
+    print("CUDA Available")
     torch.cuda.manual_seed(args.seed)
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
@@ -63,6 +64,7 @@ if torch.cuda.is_available():
     device_list = [torch.cuda.get_device_name(i) for i in range(0, torch.cuda.device_count())]
     logger.info("GPU List: %s" % (device_list))
 else:
+    print("CUDA NOT Available")
     device = torch.device('cpu')
 
 # Load Exp Configs
