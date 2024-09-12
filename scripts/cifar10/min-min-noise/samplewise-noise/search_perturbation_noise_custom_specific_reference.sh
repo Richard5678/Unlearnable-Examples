@@ -19,19 +19,6 @@ else
     echo "Directory '$exp_path' does not exist."
 fi
 
-random_permutations=(
-  "2 8 4 9 1 6 7 3 0 5"
-  "2 9 6 4 0 3 1 7 8 5"
-  "4 1 5 0 7 2 3 6 9 8"
-  "5 4 1 2 9 6 7 0 3 8"
-  "3 8 4 9 2 6 0 1 5 7"
-  "9 5 2 4 7 1 0 8 6 3"
-  "8 1 7 0 6 5 2 4 3 9"
-  "8 5 0 2 1 9 7 3 6 4"
-  "8 6 9 0 2 5 7 1 4 3"
-  "8 4 7 2 1 9 3 0 6 5"
-)
-
 cifar10_classes=(
   "airplane"
   "automobile"
@@ -45,41 +32,18 @@ cifar10_classes=(
   "truck"
 )
 
-noise_name_classes_pairs=(
-    "bird-cat:2 3" 
-    "bird-deer:2 4"
-    "cat-ship:3 8"
-    "cat-dog:3 5" 
-    "ship-truck:8 9"
-    "airplane-cat:0 3"
-    "automobile-cat:1 3"
-    "cat-deer:3 4"
-    "cat-frog:3 6"
-    "cat-horse:3 7"
-    "cat-truck:3 9"
-)
+reference_class_indices=(0 1 2 3 4 5 6 7 8 9)
+seed=0
 
-for seed in {0..9}
+for reference_class_idx in $reference_class_indices;
 do
-    # echo "List $((i+1)):"
-    # list=(${array[$seed]})  # Convert string to array
-    # for j in {1..9}; do
-    #     echo "(${list[0]}, ${list[$j]})"
-    # done
-    # for noise_name_classes_pair in "${noise_name_classes_pairs[@]}"
-    # do
-    #     IFS=':' read -r -a pair <<< "$noise_name_classes_pair"
-    #     noise_name=${pair[0]}
-    #     classes=${pair[1]}
-    #     echo $noise_name
-    #     echo $classes
-
-    #     noise_file_name="ue-cifar10-${noise_name}_seed=${seed}"
-
-    list=(${random_permutations[$seed]})  # Convert string to array
-    for j in {1..9}; do
-        noise_name="${cifar10_classes[list[0]]}-${cifar10_classes[list[$j]]}"
-        classes="${list[0]} ${list[$j]}"
+    for j in {0..9}; 
+    do
+        if [ $j -eq $reference_class_idx ]; then
+            continue
+        fi
+        noise_name="${cifar10_classes[$reference_class_idx]}-${cifar10_classes[$j]}"
+        classes="${reference_class_idx} ${j}"
         echo $noise_name
         echo $classes
 
@@ -100,7 +64,7 @@ do
                                 --universal_train_target  $universal_train_target\
                                 --universal_stop_error    $universal_stop_error\
                                 --noise_name              $noise_file_name     \
-                                --selected_classes        $classes           \
+                                --selected_classes        $classes            \
                                 --seed                    $seed
     done
 done
